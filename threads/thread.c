@@ -634,7 +634,7 @@ void thread_awake(int64_t ticks) {
 		}
 		else {
 			if(only_one == 1) {
-				next_tick_to_awake == t->wakeup_tick;
+				next_tick_to_awake = t->wakeup_tick;
 				barrier();
 				only_one--;
 			}
@@ -664,5 +664,14 @@ void test_max_priority(void) {
 	struct list_elem *e = list_begin(&ready_list);
 	if(thread_current()->priority < list_entry(e, struct thread, elem)->priority) {
 		thread_yield();
+	}
+}
+
+void priority_preemption(void) {
+	if(!list_empty(&ready_list)) {
+		struct list_elem *e = list_begin(&ready_list);
+		if(thread_current()->priority < list_entry(e, struct thread, elem)->priority) {
+			thread_yield();
+		}
 	}
 }
