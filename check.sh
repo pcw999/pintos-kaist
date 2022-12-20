@@ -1,24 +1,24 @@
 #!/bin/bash
 
-#########################################################
-###                                                   ###
-###     0. place check.sh in pintos-kaist             ###
-###                                                   ###
-###     1. make check.sh executable(command below)    ###
-###        $ chmod +x check.sh                        ###
-###                                                   ###
-###     2. run check.sh(command below)                ###
-###        $ ./check.sh                               ###
-###                                                   ###
-###     3. input project number(1~4)                  ###
-###                                                   ###
-###     4. input test case number(depends on project) ###
-###                                                   ###
-###     5. check test result!                         ###
-###                                                   ###
-###     project 3, 4 will be added soon               ###
-###                                                   ###
-#########################################################
+############################################################
+###                                                      ###
+###     0. place check.sh in pintos-kaist                ###
+###                                                      ###
+###     1. make check.sh executable(command below)       ###
+###        $ chmod +x check.sh                           ###
+###                                                      ###
+###     2. run check.sh(command below)                   ###
+###        $ ./check.sh                                  ###
+###                                                      ###
+###     3. input project number(1~4)                     ###
+###                                                      ###
+###     4. input test case number(depends on project)    ###
+###                                                      ###
+###     5. check test result!                            ###
+###                                                      ###
+###     project 3, 4 will be added soon                  ###
+###                                                      ###
+############################################################
 
 
 # all projects
@@ -159,11 +159,11 @@ USERPROG=( args-none \
 make clean                                          # clean previous build
 
 ### 1. get dir ###
-echo "Enter a project number to check: "
-echo "1: THREADS"
-echo "2: USER PROGRAMS"
-echo "3: VIRTUAL MEMORY"
-echo "4: FILE SYSTEM"
+echo "Enter project number to check: "
+echo "    1: THREADS"
+echo "    2: USER PROGRAMS"
+echo "    3: VIRTUAL MEMORY"
+echo "    4: FILE SYSTEM"
 read PRJN                                           # get project number
 if [ $PRJN -lt 1 -o $PRJN -gt 4 ]                   # check input error
 then
@@ -192,7 +192,7 @@ echo "Enter a number of test case to check"
 i=0                                                 # show test case list
 while [ $i -lt ${#TST[@]} ]
 do
-    echo $(($i+1)): ${TST[$i]}
+    echo "    $(($i+1)): ${TST[$i]}"
     let i=i+1
 done
 read TSTN                                           # get test case number
@@ -204,10 +204,9 @@ fi
 CHK=${TST[$(($TSTN-1))]}
 cd $DIR/build
 echo "########## check $CHK ##########"
-pintos -v -k -T 60 -m 20 -- -q $CHK                 # run selected test case
+pintos -v -k -T 60 -m 20 -- -q run $CHK             # run selected test case
 # change flags if needed
 # usage: pintos [-h] [-v] [-k] [-T TIMEOUT] [-m MEMORY]
 #               [--fs-disk FS_DISK] [--swap-disk SWAP_DISK]
 #               [-p HOSTFNS] [-g GUESTFNS] [--mnts MNTS] [--gdb] [-t]
-
-
+echo ""
