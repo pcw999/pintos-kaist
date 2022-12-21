@@ -28,6 +28,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+// CUSTOM
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -44,6 +47,7 @@ static struct list destruction_req;
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+static long long awake_ticks = INT64_MAX;
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -108,6 +112,7 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -176,9 +181,8 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
-tid_t
-thread_create (const char *name, int priority,
-		thread_func *function, void *aux) {
+tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) 
+{
 	struct thread *t;
 	tid_t tid;
 
@@ -232,8 +236,7 @@ thread_block (void) {
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
-void
-thread_unblock (struct thread *t) {
+void thread_unblock (struct thread *t) {
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
@@ -294,8 +297,7 @@ thread_exit (void) {
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
-void
-thread_yield (void) {
+void thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
@@ -306,6 +308,59 @@ thread_yield (void) {
 		list_push_back (&ready_list, &curr->elem);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
+}
+
+void thread_sleep(int64_t ticks)
+{
+	struct thread *current = thread_current ();
+	enum intr_level old_level = intr_disable ();
+
+	if (current != idle_thread)
+	{
+		list_push_back (&sleep_list, &current->elem);
+		current->wakeup_ticks = ticks;
+
+		if (awake_ticks > ticks)
+		{
+			awake_ticks = ticks;
+		}
+		
+		thread_block();
+	}
+
+	intr_set_level (old_level);
+}
+
+void thread_awake(int64_t ticks)
+{
+	if (list_empty(&sleep_list)) { return; }
+	if (awake_ticks > ticks) { return; }
+	
+	struct list_elem *current = list_begin(&sleep_list);
+
+	while (current != list_end(&sleep_list))
+	{
+		struct thread *current_thread = list_entry(current, struct thread, elem);
+
+		if (current_thread->wakeup_ticks <= ticks)
+		{
+			current = list_remove(current);
+			thread_unblock(current_thread);
+		}
+		else
+		{
+			current = current->next;
+			if (awake_ticks > current_thread->wakeup_ticks)
+			{
+				awake_ticks = current_thread->wakeup_ticks;
+			}
+		}
+	}
+}
+
+int64_t thread_get_awake_tick(void)
+{
+	return awake_ticks;
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
