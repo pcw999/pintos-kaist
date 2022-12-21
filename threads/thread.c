@@ -218,9 +218,7 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
-	if(thread_current()->priority < t->priority) {
-		thread_yield();
-	}
+	priority_preemption();
 
 	return tid;
 }
@@ -329,8 +327,10 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
-	test_max_priority();
+	thread_current ()->origin_priority = new_priority;
+
+	refresh_priority();
+	priority_preemption();
 }
 
 /* Returns the current thread's priority. */
@@ -428,6 +428,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	t->origin_priority = priority;
+	t->wait_lock = NULL;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -660,13 +664,6 @@ bool cmp_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED) { 
 	return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
 }
 
-void test_max_priority(void) {
-	struct list_elem *e = list_begin(&ready_list);
-	if(thread_current()->priority < list_entry(e, struct thread, elem)->priority) {
-		thread_yield();
-	}
-}
-
 void priority_preemption(void) {
 	if(!list_empty(&ready_list)) {
 		struct list_elem *e = list_begin(&ready_list);
@@ -674,4 +671,49 @@ void priority_preemption(void) {
 			thread_yield();
 		}
 	}
+}
+
+void donate_priority(void) {
+	struct thread *cur = thread_current();
+	
+	for(int depth=0; depth<8; depth++) {
+		if(!cur->wait_lock) {
+			break;
+		}
+		struct thread *holder = cur->wait_lock->holder;
+		holder->priority = cur->priority;
+		cur = holder;
+	}
+}
+
+void remove_with_lock(struct lock *lock) {
+	struct list_elem *e;
+	struct thread *cur = thread_current();
+
+	for(e=list_begin(&cur->donations); e!=list_end(&cur->donations); e=list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+
+		if(t->wait_lock == lock) {
+			list_remove(&t->donation_elem);
+		}
+	}
+}
+
+void refresh_priority(void) {
+	struct thread *cur = thread_current();
+
+	cur->priority = cur->origin_priority;
+
+	if(!list_empty(&cur->donations)) {
+		list_sort(&cur->donations, thread_compare_donate_priority, NULL);
+
+		struct thread *t = list_entry(list_front(&cur->donations), struct thread, donation_elem);
+		if(t->priority > cur->priority) {
+			cur->priority = t->priority;
+		}
+	}
+}
+
+bool thread_compare_donate_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED) {
+	return list_entry(a, struct thread, donation_elem)->priority > list_entry(b, struct thread, donation_elem)->priority;
 }

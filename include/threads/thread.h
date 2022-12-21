@@ -96,6 +96,13 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	/*priority donation*/
+	int origin_priority;				/* befor donation Priority. */
+	struct lock *wait_lock;
+	struct list donations;
+	struct list_elem donation_elem;
+	
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -150,8 +157,11 @@ void update_next_tick_to_awake(int64_t ticks);
 int64_t get_next_tick_to_awake(void);
 
 void priority_preemption(void);
-
-void test_max_priority(void);
 bool cmp_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED);
+
+void donate_priority(void);
+void remove_with_lock(struct lock *lock);
+void refresh_priority(void);
+bool thread_compare_donate_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED);
 
 #endif /* threads/thread.h */
