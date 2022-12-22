@@ -28,6 +28,14 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of all processes. Processes are added to this list
+   when they are first scheduled and removed when they exit. */
+//static struct list all_list;
+
+/* List of processes in THREAD_SLEEP state, that is, processes
+   that are not ready to run but after a few ticks they'll be inserted in ready_list. */
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -78,6 +86,8 @@ static tid_t allocate_tid (void);
 // Because the gdt will be setup after the thread_init, we should
 // setup temporal gdt first.
 static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
+// next_tick_to_awake
+int64_t next_tick_to_awake = INT64_MAX;
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -109,6 +119,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	list_init (&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -207,6 +218,8 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	priority_preemption();
+
 	return tid;
 }
 
@@ -240,7 +253,8 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	//list_push_back (&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -302,8 +316,10 @@ thread_yield (void) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
-	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+	if (curr != idle_thread) {
+		//list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
+	}
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -311,7 +327,10 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->origin_priority = new_priority;
+
+	refresh_priority();
+	priority_preemption();
 }
 
 /* Returns the current thread's priority. */
@@ -409,6 +428,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	t->origin_priority = priority;
+	t->wait_lock = NULL;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -587,4 +610,110 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+void thread_sleep(int64_t ticks) {
+	struct thread *cur;
+	enum intr_level old_level;
+
+	old_level = intr_disable(); //interrupt off
+	cur = thread_current();
+
+	cur->wakeup_tick = ticks;
+	list_push_back(&sleep_list, &cur->elem);
+	thread_block();
+
+	intr_set_level(old_level);
+}
+
+void thread_awake(int64_t ticks) {
+	struct list_elem *e = list_begin(&sleep_list);
+	int only_one = 1;
+
+	while(e != list_end(&sleep_list)) {
+		struct thread *t = list_entry(e, struct thread, elem);
+		if(t->wakeup_tick <= ticks) {
+			e = list_remove(e);
+			thread_unblock(t);
+		}
+		else {
+			if(only_one == 1) {
+				next_tick_to_awake = t->wakeup_tick;
+				barrier();
+				only_one--;
+			}
+			else {
+				update_next_tick_to_awake(t->wakeup_tick);
+			}
+			e = list_next(e);
+		}
+	}
+}
+
+void update_next_tick_to_awake(int64_t ticks) {
+	if(ticks < next_tick_to_awake) {
+		next_tick_to_awake = ticks;
+	}
+}
+
+int64_t get_next_tick_to_awake(void) {
+	return next_tick_to_awake;
+}
+
+bool cmp_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED) { //a가 b보다 크면 true
+	return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
+}
+
+void priority_preemption(void) {
+	if(!list_empty(&ready_list)) {
+		struct list_elem *e = list_begin(&ready_list);
+		if(thread_current()->priority < list_entry(e, struct thread, elem)->priority) {
+			thread_yield();
+		}
+	}
+}
+
+void donate_priority(void) {
+	struct thread *cur = thread_current();
+	
+	for(int depth=0; depth<8; depth++) {
+		if(!cur->wait_lock) {
+			break;
+		}
+		struct thread *holder = cur->wait_lock->holder;
+		holder->priority = cur->priority;
+		cur = holder;
+	}
+}
+
+void remove_with_lock(struct lock *lock) {
+	struct list_elem *e;
+	struct thread *cur = thread_current();
+
+	for(e=list_begin(&cur->donations); e!=list_end(&cur->donations); e=list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+
+		if(t->wait_lock == lock) {
+			list_remove(&t->donation_elem);
+		}
+	}
+}
+
+void refresh_priority(void) {
+	struct thread *cur = thread_current();
+
+	cur->priority = cur->origin_priority;
+
+	if(!list_empty(&cur->donations)) {
+		list_sort(&cur->donations, thread_compare_donate_priority, NULL);
+
+		struct thread *t = list_entry(list_front(&cur->donations), struct thread, donation_elem);
+		if(t->priority > cur->priority) {
+			cur->priority = t->priority;
+		}
+	}
+}
+
+bool thread_compare_donate_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED) {
+	return list_entry(a, struct thread, donation_elem)->priority > list_entry(b, struct thread, donation_elem)->priority;
 }

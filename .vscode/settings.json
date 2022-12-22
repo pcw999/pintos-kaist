@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "thread.h": "c",
+        "flags.h": "c"
+    }
+}
