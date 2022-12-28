@@ -202,7 +202,19 @@ thread_create (const char *name, int priority,
 
 	/* Initialize thread. */
 	init_thread (t, name, priority);
+	t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+	if(t->fd_table == NULL) {
+		return TID_ERROR;
+	}
+	t->fd_idx = 2;
+	t->fd_table[0] = 1;
+	t->fd_table[1] = 2;
+
 	tid = t->tid = allocate_tid ();
+
+	/* insert child in parent's child list*/
+	struct thread *cur = thread_current();
+	list_push_back(&cur->child_list, &t->child_list_elem);
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -429,9 +441,15 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
 
+	//priority donation
 	t->origin_priority = priority;
 	t->wait_lock = NULL;
 	list_init(&t->donations);
+
+	//syscall
+	list_init(&t->child_list);
+	sema_init(&t->wait_fork, 0);
+	sema_init(&t->wait_child, 0);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

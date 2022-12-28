@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 #include "threads/interrupt.h"
 #ifdef VM
 #include "vm/vm.h"
@@ -27,6 +28,10 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+/* fdtable */
+#define FDT_PAGES 3 //pages to allocate for file descriptor tables (thread_create, process_exit)
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) //Limit fdIdx
 
 /* A kernel thread or user process.
  *
@@ -101,7 +106,16 @@ struct thread {
 	struct lock *wait_lock;
 	struct list donations;
 	struct list_elem donation_elem;
-	
+
+	/* project 2 */
+	struct file **fd_table; //thread_create에서 할당
+	int fd_idx; //fd테이블에서 open_spot의 인덱스
+	int exit_status;
+	struct list child_list;
+	struct list_elem child_list_elem;
+	struct semaphore wait_child;
+	struct intr_frame parent_if;
+	struct semaphore wait_fork;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
