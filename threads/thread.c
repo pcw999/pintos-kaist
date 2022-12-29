@@ -118,6 +118,7 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
 	list_init (&destruction_req);
 	list_init (&sleep_list);
 
@@ -230,7 +231,10 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
-	priority_preemption();
+	if (thread_current()->priority < t->priority)
+	{
+		thread_yield();
+	}
 
 	return tid;
 }
@@ -450,6 +454,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	list_init(&t->child_list);
 	sema_init(&t->wait_fork, 0);
 	sema_init(&t->wait_child, 0);
+	sema_init(&t->wait_receive, 0);
+	t->running = NULL;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

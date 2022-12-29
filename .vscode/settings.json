@@ -10,6 +10,13 @@
         "syscall-nr.h": "c",
         "file.h": "c",
         "process.h": "c",
-        "stddef.h": "c"
+        "stddef.h": "c",
+        "synch.h": "c",
+        "*.inc": "c",
+        "filesys.h": "c",
+        "string.h": "c",
+        "palloc.h": "c",
+        "main.h": "c",
+        "mmu.h": "c"
     }
 }

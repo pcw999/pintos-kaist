@@ -1,31 +1,34 @@
-#include <stdio.h>
-#include <syscall-nr.h>
-#include "lib/user/syscall.h" //for syscall fuction
-#include "intrinsic.h"
-#include "lib/string.h"
-#include "lib/kernel/stdio.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/loader.h"
-#include "threads/flags.h"
 #include "threads/palloc.h"
-#include "threads/synch.h"
+#include "threads/flags.h"
+#include "threads/vaddr.h"
 #include "userprog/gdt.h"
-#include "userprog/syscall.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
-#include "devices/input.h"
+#include <list.h>
+#include <stdio.h>
+#include <syscall-nr.h>
+#include "intrinsic.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
-void check_address(void *addr);
-int add_file_to_fdt(struct file *file);
-static struct file *find_file_by_fd(int fd);
-void remove_file_fdt(int fd);
-pid_t fork(const char *thread_name, struct intr_frame *f);
 
-struct lock file_lock;
+void check_address(uaddr);
+void halt(void);
+void exit(int status);
+bool create(const char *file, unsigned initial_size);
+bool remove(const char *file);
+int open(const char *file);
+int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);
+int write(int fd, const void *buffer, unsigned size);
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
+void close(int fd);
 
 /* System call.
  *
@@ -59,8 +62,7 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f) {
 	// TODO: Your implementation goes here.
-	int number = f->R.rax;
-	switch(number) {
+	switch(f->R.rax) {
 		case SYS_HALT:
 			halt();
 			break;
@@ -106,11 +108,12 @@ syscall_handler (struct intr_frame *f) {
 			close(f->R.rdi);
 			break;	
 		default:
-			return -1;
+			exit(-1);
+			break;
 	}
 }
 
-void check_address(void *addr) {
+void check_address(const uint64_t *addr) {
 	if(!is_user_vaddr(addr) || addr == NULL || pml4_get_page(thread_current()->pml4, addr) == NULL) {
 		exit(-1);
 	}
@@ -158,10 +161,11 @@ void exit(int status) {
 	struct thread *cur = thread_current();
 	cur->exit_status = status;
 	
+	printf("%s: exit(%d)\n", thread_name(), status);
 	thread_exit();
 }
 
-pid_t fork(const char *thread_name, struct intr_frame *f) {
+tid_t fork(const char *thread_name, struct intr_frame *f) {
 	return process_fork(thread_name, f);
 }
 
@@ -171,9 +175,9 @@ int exec(const char *file) {
 	int file_size = strlen(file)+1;
 	char *fn_copy = palloc_get_page(PAL_ZERO);
 	if(fn_copy == NULL) {
-		return -1;
+		exit(-1);
 	}
-	strlcpy(fn_copy, file, filesize);
+	strlcpy(fn_copy, file, file_size);
 
 	if(process_exec(fn_copy) == -1) {
 		return -1;
@@ -183,7 +187,7 @@ int exec(const char *file) {
 	return 0;
 }
 
-int wait(pid_t pid) {
+int wait(tid_t pid) {
 	return process_wait(pid);
 }
 

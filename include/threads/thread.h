@@ -108,14 +108,16 @@ struct thread {
 	struct list_elem donation_elem;
 
 	/* project 2 */
+	struct file *running;
 	struct file **fd_table; //thread_create에서 할당
 	int fd_idx; //fd테이블에서 open_spot의 인덱스
 	int exit_status;
 	struct list child_list;
 	struct list_elem child_list_elem;
-	struct semaphore wait_child;
 	struct intr_frame parent_if;
-	struct semaphore wait_fork;
+	struct semaphore wait_child; // 부모가 자식 실행, 종료 대기
+	struct semaphore wait_fork; // fork되는 과정에서 load 될때까지 대기
+	struct semaphore wait_receive; //자식이 부모한테 exit_status 전달받기 전까지 대기 
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
